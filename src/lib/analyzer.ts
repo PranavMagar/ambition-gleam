@@ -1,4 +1,5 @@
 import { AnalysisResult, JobLevel, Profession, SectionScore } from "@/context/ResumeContext";
+import { extractResumeText } from "@/lib/fileParser";
 
 // Profession-specific keyword libraries. Combined with level for final scoring.
 const PROFESSION_KEYWORDS: Record<Profession, string[]> = {
