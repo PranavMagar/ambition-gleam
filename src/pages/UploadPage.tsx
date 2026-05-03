@@ -34,7 +34,7 @@ export default function UploadPage() {
         <div className="text-center space-y-4 mb-10 animate-fade-in">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full glass text-xs">
             <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            <span>Step 1 of 3 · Upload your resume</span>
+            <span>Step 1 of 4 · Upload your resume</span>
           </div>
           <h1 className="font-display text-4xl lg:text-5xl font-bold text-balance">
             Let's <span className="gradient-text">optimize</span> your resume
@@ -102,7 +102,7 @@ export default function UploadPage() {
                 </div>
                 <Button
                   size="lg"
-                  onClick={() => nav("/job-level")}
+                  onClick={() => nav("/profession")}
                   className="bg-gradient-primary hover:opacity-90 text-primary-foreground border-0 shadow-glow font-semibold px-8"
                 >
                   Continue →
