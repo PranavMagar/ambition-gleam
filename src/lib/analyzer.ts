@@ -1,94 +1,254 @@
-import { AnalysisResult, JobLevel } from "@/context/ResumeContext";
+import { AnalysisResult, JobLevel, Profession, SectionScore } from "@/context/ResumeContext";
 
-// Client-side heuristic analyzer. Mirrors the original backend logic shape.
-// Reads file text (best effort) and produces a deterministic, reasonable result.
+// Profession-specific keyword libraries. Combined with level for final scoring.
+const PROFESSION_KEYWORDS: Record<Profession, string[]> = {
+  software: ["javascript", "typescript", "react", "node", "api", "git", "testing", "ci/cd", "docker", "system design", "agile"],
+  data: ["python", "sql", "pandas", "machine learning", "etl", "tableau", "spark", "statistics", "modeling", "a/b test"],
+  design: ["figma", "prototyping", "user research", "wireframes", "design system", "accessibility", "user flows", "usability", "interaction"],
+  product: ["roadmap", "stakeholders", "user research", "metrics", "okrs", "discovery", "prioritization", "go-to-market", "kpi"],
+  marketing: ["seo", "campaigns", "content", "analytics", "growth", "conversion", "brand", "social", "ctr", "funnel"],
+  sales: ["pipeline", "quota", "crm", "salesforce", "prospecting", "negotiation", "closing", "revenue", "outbound", "account"],
+  finance: ["forecasting", "modeling", "valuation", "budgeting", "excel", "audit", "gaap", "variance", "reconciliation", "compliance"],
+  hr: ["recruiting", "onboarding", "performance", "engagement", "policies", "compliance", "ats", "diversity", "compensation"],
+  operations: ["logistics", "supply chain", "process", "kpi", "lean", "vendors", "automation", "scheduling", "inventory"],
+  healthcare: ["patient care", "clinical", "ehr", "hipaa", "diagnosis", "treatment", "compliance", "emr", "triage"],
+  education: ["curriculum", "lesson plans", "assessment", "classroom", "students", "pedagogy", "iep", "differentiation"],
+  customer: ["csat", "nps", "onboarding", "retention", "renewals", "playbooks", "support", "escalations", "advocacy"],
+  other: ["communication", "leadership", "collaboration", "problem solving", "project management"],
+};
 
-const KEYWORDS: Record<JobLevel, string[]> = {
-  entry: ["internship", "projects", "coursework", "github", "team", "learning", "javascript", "python"],
-  mid: ["led", "built", "shipped", "react", "typescript", "api", "ownership", "metrics", "scaled"],
-  senior: ["architected", "mentored", "roadmap", "stakeholders", "system design", "scaled", "strategy", "led team"],
+const LEVEL_KEYWORDS: Record<JobLevel, string[]> = {
+  entry: ["internship", "projects", "coursework", "team", "learning"],
+  mid: ["led", "built", "shipped", "ownership", "metrics", "scaled"],
+  senior: ["architected", "mentored", "roadmap", "stakeholders", "strategy", "led team"],
   executive: ["strategy", "p&l", "vision", "org", "hiring", "board", "growth", "transformation"],
+};
+
+const PROFESSION_LABEL: Record<Profession, string> = {
+  software: "Software Engineering",
+  data: "Data & Analytics",
+  design: "Design / UX",
+  product: "Product Management",
+  marketing: "Marketing",
+  sales: "Sales",
+  finance: "Finance & Accounting",
+  hr: "People / HR",
+  operations: "Operations",
+  healthcare: "Healthcare",
+  education: "Education",
+  customer: "Customer Success",
+  other: "General",
 };
 
 const SECTIONS = ["summary", "experience", "education", "skills", "projects"];
 
 async function readFileText(file: File): Promise<string> {
   try {
-    if (file.type.includes("text") || file.name.endsWith(".txt")) {
-      return await file.text();
-    }
-    // For PDF/DOCX we can't really parse client-side without libs; fall back to filename + size hash for variability
+    if (file.type.includes("text") || file.name.endsWith(".txt")) return await file.text();
     return await file.text().catch(() => "");
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
 
-function hashCode(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i), (h |= 0);
-  return Math.abs(h);
+function tokenize(s: string) {
+  return s.toLowerCase().match(/[a-z][a-z+#./&]{1,}/g) || [];
 }
 
-export async function analyzeResume(file: File, level: JobLevel): Promise<AnalysisResult> {
-  const text = (await readFileText(file)).toLowerCase();
-  const seed = hashCode(file.name + file.size + level);
-  const rand = (min: number, max: number) => min + (seed % 1000) / 1000 * (max - min);
+interface AnalyzeArgs {
+  file: File;
+  level: JobLevel;
+  profession: Profession;
+  targetRole?: string;
+  jobDescription?: string;
+}
 
-  const keywords = KEYWORDS[level];
-  const matched = keywords.filter((k) => text.includes(k));
-  const missing = keywords.filter((k) => !text.includes(k));
+export async function analyzeResume({ file, level, profession, targetRole, jobDescription }: AnalyzeArgs): Promise<AnalysisResult> {
+  const raw = await readFileText(file);
+  const text = raw.toLowerCase();
 
-  const sectionsFound = SECTIONS.filter((s) => text.includes(s));
-  const missingSections = SECTIONS.filter((s) => !text.includes(s));
+  // Combined keyword set weighted toward profession.
+  const profKeys = PROFESSION_KEYWORDS[profession];
+  const levelKeys = LEVEL_KEYWORDS[level];
+  const allKeys = Array.from(new Set([...profKeys, ...levelKeys]));
 
-  // Score: base + section coverage + keyword coverage + length bonus
-  let score = 35;
-  score += sectionsFound.length * 7;                    // up to +35
-  score += Math.round((matched.length / keywords.length) * 20); // up to +20
-  if (text.length > 1500) score += 5;
-  if (text.length > 3500) score += 5;
-  score = Math.min(96, Math.max(42, Math.round(score + rand(-3, 3))));
+  const matched = allKeys.filter((k) => text.includes(k));
+  const missing = allKeys.filter((k) => !text.includes(k));
 
+  // Section-by-section scoring
+  const sections: SectionScore[] = SECTIONS.map((s) => {
+    const present = text.includes(s);
+    let score = present ? 70 : 30;
+    let note = present ? "Detected" : "Missing — add this section";
+    if (s === "experience" && present) {
+      const bullets = (raw.match(/[•\-*]\s/g) || []).length;
+      score = Math.min(100, 50 + bullets * 4);
+      note = `${bullets} bullets detected`;
+    }
+    if (s === "skills" && present) {
+      const skillHits = profKeys.filter((k) => text.includes(k)).length;
+      score = Math.min(100, 50 + skillHits * 8);
+      note = `${skillHits}/${profKeys.length} ${PROFESSION_LABEL[profession]} skills`;
+    }
+    if (s === "summary" && present) {
+      score = targetRole && text.includes(targetRole.toLowerCase()) ? 92 : 75;
+      note = score > 85 ? "Tailored to target role" : "Could be more tailored";
+    }
+    const status: SectionScore["status"] = score >= 75 ? "good" : score >= 55 ? "warn" : "bad";
+    return { name: s.charAt(0).toUpperCase() + s.slice(1), score, status, note };
+  });
+
+  // Readability
+  const words = (raw.match(/\S+/g) || []).length;
+  const bullets = (raw.match(/[•\-*]\s/g) || []).length;
+  const quantified = (raw.match(/\b\d+%?\b/g) || []).length;
+
+  // Aggregate score
+  const sectionAvg = sections.reduce((a, s) => a + s.score, 0) / sections.length;
+  const keywordCoverage = matched.length / Math.max(1, allKeys.length);
+  let score = Math.round(sectionAvg * 0.55 + keywordCoverage * 100 * 0.35 + Math.min(10, bullets / 2));
+  if (words < 250) score -= 8;
+  if (quantified < 3) score -= 5;
+  score = Math.max(38, Math.min(98, score));
+
+  // Issues
   const issues: string[] = [];
-  if (missingSections.includes("summary")) issues.push("Professional Summary section is missing.");
-  if (missingSections.includes("skills")) issues.push("No dedicated Skills section detected.");
-  if (missing.length > 3) issues.push(`Missing ${missing.length} important keywords for a ${level}-level role.`);
-  if (text.length < 1200) issues.push("Resume content appears short for an ATS-friendly document.");
-  if (!/\d/.test(text)) issues.push("No quantified achievements (numbers, %, $) detected.");
-  if (issues.length === 0) issues.push("Minor formatting inconsistencies detected.");
+  sections.filter((s) => s.status === "bad").forEach((s) => issues.push(`${s.name} section needs improvement.`));
+  if (missing.length > Math.ceil(allKeys.length * 0.4))
+    issues.push(`Missing ${missing.length} important ${PROFESSION_LABEL[profession]} keywords.`);
+  if (quantified < 3) issues.push("Add measurable results (numbers, %, $).");
+  if (words < 250) issues.push("Resume content seems too short.");
+  if (targetRole && !text.includes(targetRole.toLowerCase()))
+    issues.push(`Target role "${targetRole}" is not mentioned anywhere.`);
+  if (!issues.length) issues.push("Minor formatting tweaks recommended.");
 
+  // Suggestions
   const suggestions = [
-    "Add a 2–3 line professional summary tailored to the target role.",
-    "Quantify achievements with metrics (e.g. reduced X by 40%).",
-    "Use strong action verbs at the start of each bullet.",
-    `Incorporate keywords like: ${missing.slice(0, 4).join(", ") || "—"}.`,
-    "Keep formatting clean: single column, standard fonts, no tables.",
+    `Tailor your summary to a ${PROFESSION_LABEL[profession]} ${level}-level role${targetRole ? ` (${targetRole})` : ""}.`,
+    "Quantify achievements with concrete metrics (%, $, time saved).",
+    "Lead each bullet with a strong action verb.",
+    `Add keywords like: ${missing.slice(0, 5).join(", ") || "—"}.`,
+    "Keep formatting ATS-safe: single column, no tables, standard fonts.",
   ];
 
-  const rewrites = {
-    summary:
-      level === "senior"
-        ? "Senior engineer with 8+ years architecting scalable platforms across fintech and SaaS. Proven track record mentoring teams of 10+, owning roadmaps end-to-end, and shipping systems serving millions of users."
-        : level === "executive"
-        ? "Strategic technology leader with a record of driving multi-million dollar growth, building world-class teams, and delivering organizational transformation across complex engineering orgs."
-        : level === "entry"
-        ? "Motivated CS graduate with hands-on internship experience and a portfolio of full-stack projects. Eager to contribute to high-impact teams while continuously learning modern engineering practices."
-        : "Results-driven engineer who ships polished, performant products. 4+ years owning features end-to-end with a focus on clean architecture, measurable impact, and effective cross-functional collaboration.",
-    experience: [
-      "Led migration to a modular service architecture, cutting deployment time by 42% and reducing incident MTTR by 30%.",
-      "Designed and shipped a real-time analytics dashboard adopted by 12K+ weekly active users.",
-      "Mentored 4 engineers, established code-review standards, and lifted unit test coverage from 38% to 82%.",
-      "Partnered with product to launch onboarding redesign; activation lifted 18% within one quarter.",
+  // JD match
+  let jdMatch: AnalysisResult["jdMatch"];
+  if (jobDescription && jobDescription.trim().length > 30) {
+    const jdTokens = Array.from(new Set(tokenize(jobDescription))).filter((t) => t.length > 3);
+    const jdMatched = jdTokens.filter((t) => text.includes(t));
+    const jdScore = Math.round((jdMatched.length / Math.max(1, jdTokens.length)) * 100);
+    jdMatch = {
+      score: jdScore,
+      matched: jdMatched.slice(0, 25),
+      missing: jdTokens.filter((t) => !text.includes(t)).slice(0, 25),
+    };
+  }
+
+  // Rewrites — profession + level aware
+  const role = targetRole || `${level}-level ${PROFESSION_LABEL[profession]}`;
+  const summaryByLevel = {
+    entry: `Motivated ${PROFESSION_LABEL[profession]} professional with hands-on project experience and a passion for ${role}. Eager to bring strong fundamentals, fast learning, and reliable execution to a high-impact team.`,
+    mid: `Results-driven ${PROFESSION_LABEL[profession]} contributor with 4+ years delivering measurable outcomes. Known for ${profKeys.slice(0, 3).join(", ")}, and shipping work that moves key metrics for ${role} teams.`,
+    senior: `Senior ${PROFESSION_LABEL[profession]} leader with 8+ years owning end-to-end delivery, mentoring teams, and partnering with stakeholders to ship outcomes that matter. Deep expertise across ${profKeys.slice(0, 3).join(", ")}.`,
+    executive: `Strategic ${PROFESSION_LABEL[profession]} executive with a track record of building high-performing orgs, owning P&L, and driving multi-million dollar growth across complex ${role} mandates.`,
+  };
+  const expByProfession: Record<Profession, string[]> = {
+    software: [
+      "Led migration to a modular service architecture, cutting deployment time by 42% and MTTR by 30%.",
+      "Shipped a real-time dashboard adopted by 12K+ weekly active users.",
+      "Lifted unit test coverage from 38% to 82% and established review standards.",
+    ],
+    data: [
+      "Built ETL pipeline processing 8M events/day, reducing reporting latency from 24h to 15m.",
+      "Designed A/B test framework that informed a 14% lift in conversion.",
+      "Productionized ML model improving forecast accuracy by 22%.",
+    ],
+    design: [
+      "Redesigned onboarding flow, lifting activation 18% within one quarter.",
+      "Established a design system used across 6 squads, cutting design-to-ship time 35%.",
+      "Led 20+ user research sessions to inform feature roadmap.",
+    ],
+    product: [
+      "Owned roadmap for a $4M ARR product line; shipped 3 major releases hitting 110% of OKRs.",
+      "Launched discovery practice that killed 4 low-value bets, saving ~6 eng months.",
+      "Drove cross-functional GTM that grew MAU 38% YoY.",
+    ],
+    marketing: [
+      "Scaled SEO program to 1.2M monthly organic sessions (+74% YoY).",
+      "Launched paid funnel cutting CAC by 28% while doubling MQLs.",
+      "Built content engine producing 40+ pieces/quarter.",
+    ],
+    sales: [
+      "Closed $2.3M in net new ARR, hitting 142% of quota two years running.",
+      "Built outbound playbook lifting team-wide pipeline by 60%.",
+      "Negotiated multi-year enterprise contracts averaging $250K ACV.",
+    ],
+    finance: [
+      "Built three-statement model used for $30M Series B raise.",
+      "Cut close cycle from 12 to 5 days through automation.",
+      "Identified $1.1M annual savings via vendor consolidation.",
+    ],
+    hr: [
+      "Scaled hiring from 40 to 110 in 12 months while lifting offer-acceptance to 91%.",
+      "Rolled out engagement program; eNPS climbed from 22 to 48.",
+      "Designed leveling framework adopted org-wide.",
+    ],
+    operations: [
+      "Reduced order fulfillment time 35% via process redesign.",
+      "Negotiated vendor contracts saving $480K annually.",
+      "Implemented automation cutting manual ops hours 60%.",
+    ],
+    healthcare: [
+      "Managed caseload of 30+ patients with 98% care plan adherence.",
+      "Reduced chart-completion time 40% by standardizing EHR templates.",
+      "Trained 12 staff on updated HIPAA-compliant workflows.",
+    ],
+    education: [
+      "Designed differentiated curriculum lifting student proficiency 23%.",
+      "Mentored 4 new teachers through onboarding program.",
+      "Integrated tech tools raising student engagement scores 30%.",
+    ],
+    customer: [
+      "Owned book of 60 accounts ($4M ARR) with 96% gross retention.",
+      "Built onboarding playbook cutting time-to-value from 45 to 18 days.",
+      "Drove $1.2M in expansion revenue through proactive QBRs.",
+    ],
+    other: [
+      "Owned end-to-end delivery of cross-functional initiative driving 25% efficiency gains.",
+      "Led team of 5 through complex turnaround project on schedule and under budget.",
+      "Built reporting framework adopted by leadership team.",
     ],
   };
+
+  const coverLetter = `Dear Hiring Team,
+
+I'm excited to apply for the ${role} role. With a background in ${PROFESSION_LABEL[profession]} and proven strengths in ${profKeys.slice(0, 3).join(", ")}, I'm confident I can contribute meaningfully from day one.
+
+In recent roles I've ${expByProfession[profession][0].toLowerCase()} I take pride in pairing strong execution with measurable impact, and I'm drawn to your team's mission and the opportunity to grow alongside talented colleagues.
+
+I'd welcome the chance to discuss how my experience aligns with your needs. Thank you for your consideration.
+
+Sincerely,
+${"{Your Name}"}`;
 
   return {
     score,
     issues,
     suggestions,
-    rewrites,
+    rewrites: {
+      summary: summaryByLevel[level],
+      experience: expByProfession[profession],
+      coverLetter,
+    },
     errors: [],
     keywords: { matched, missing },
+    sections,
+    jdMatch,
+    readability: {
+      words,
+      bullets,
+      quantified,
+      readingTime: `${Math.max(1, Math.round(words / 220))} min`,
+    },
   };
 }
+
+export { PROFESSION_LABEL };

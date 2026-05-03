@@ -7,21 +7,19 @@ export const PageShell = ({ children, hideNav }: { children: ReactNode; hideNav?
   const { user } = useResume();
   return (
     <div className="relative min-h-screen overflow-x-hidden">
-      {/* Animated background orbs */}
       <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute -top-40 -left-40 w-[480px] h-[480px] rounded-full bg-primary/30 blur-3xl animate-blob" />
-        <div className="absolute top-1/3 -right-40 w-[520px] h-[520px] rounded-full bg-accent/20 blur-3xl animate-blob [animation-delay:-4s]" />
-        <div className="absolute bottom-0 left-1/3 w-[420px] h-[420px] rounded-full bg-primary-glow/20 blur-3xl animate-blob [animation-delay:-8s]" />
+        <div className="absolute -top-40 -left-40 w-[420px] h-[420px] rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute top-1/3 -right-40 w-[460px] h-[460px] rounded-full bg-accent/10 blur-3xl" />
       </div>
 
       {!hideNav && (
-        <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/40 border-b border-white/5">
+        <header className="sticky top-0 z-40 backdrop-blur-md bg-background/70 border-b border-border">
           <div className="container flex items-center justify-between h-16">
             <Logo />
-            <nav className="flex items-center gap-3 text-sm">
+            <nav className="flex items-center gap-4 text-sm">
               {user && (
                 <span className="text-muted-foreground hidden sm:inline">
-                  Hi, <span className="text-foreground">{user.name}</span>
+                  Hi, <span className="text-foreground font-medium">{user.name}</span>
                 </span>
               )}
               <Link to="/upload" className="text-muted-foreground hover:text-foreground transition">
