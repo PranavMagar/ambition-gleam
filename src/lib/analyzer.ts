@@ -41,17 +41,35 @@ const PROFESSION_LABEL: Record<Profession, string> = {
   other: "General",
 };
 
-const SECTIONS = ["summary", "experience", "education", "skills", "projects"];
+const SECTION_SYNONYMS: Record<string, string[]> = {
+  summary: ["summary", "profile", "objective", "about me", "professional summary", "career summary"],
+  experience: ["experience", "work experience", "employment", "professional experience", "work history", "career history"],
+  education: ["education", "academic", "qualifications", "academic background"],
+  skills: ["skills", "technical skills", "core competencies", "competencies", "technologies", "tech stack"],
+  projects: ["projects", "personal projects", "selected projects", "portfolio"],
+};
 
 async function readFileText(file: File): Promise<string> {
-  try {
-    if (file.type.includes("text") || file.name.endsWith(".txt")) return await file.text();
-    return await file.text().catch(() => "");
-  } catch { return ""; }
+  return await extractResumeText(file);
 }
 
 function tokenize(s: string) {
   return s.toLowerCase().match(/[a-z][a-z+#./&]{1,}/g) || [];
+}
+
+function hasKeyword(text: string, kw: string): boolean {
+  const k = kw.toLowerCase().trim();
+  if (!k) return false;
+  // Special chars (c++, c#, .net, ci/cd) — substring match
+  if (/[+#./&]/.test(k)) return text.includes(k);
+  // Word-boundary match
+  const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+}
+
+function hasSection(text: string, key: string): boolean {
+  const syns = SECTION_SYNONYMS[key] || [key];
+  return syns.some((s) => new RegExp(`\\b${s.replace(/\s+/g, "\\s+")}\\b`, "i").test(text));
 }
 
 interface AnalyzeArgs {
