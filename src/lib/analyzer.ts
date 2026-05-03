@@ -1,4 +1,5 @@
 import { AnalysisResult, JobLevel, Profession, SectionScore } from "@/context/ResumeContext";
+import { extractResumeText } from "@/lib/fileParser";
 
 // Profession-specific keyword libraries. Combined with level for final scoring.
 const PROFESSION_KEYWORDS: Record<Profession, string[]> = {
@@ -40,17 +41,35 @@ const PROFESSION_LABEL: Record<Profession, string> = {
   other: "General",
 };
 
-const SECTIONS = ["summary", "experience", "education", "skills", "projects"];
+const SECTION_SYNONYMS: Record<string, string[]> = {
+  summary: ["summary", "profile", "objective", "about me", "professional summary", "career summary"],
+  experience: ["experience", "work experience", "employment", "professional experience", "work history", "career history"],
+  education: ["education", "academic", "qualifications", "academic background"],
+  skills: ["skills", "technical skills", "core competencies", "competencies", "technologies", "tech stack"],
+  projects: ["projects", "personal projects", "selected projects", "portfolio"],
+};
 
 async function readFileText(file: File): Promise<string> {
-  try {
-    if (file.type.includes("text") || file.name.endsWith(".txt")) return await file.text();
-    return await file.text().catch(() => "");
-  } catch { return ""; }
+  return await extractResumeText(file);
 }
 
 function tokenize(s: string) {
   return s.toLowerCase().match(/[a-z][a-z+#./&]{1,}/g) || [];
+}
+
+function hasKeyword(text: string, kw: string): boolean {
+  const k = kw.toLowerCase().trim();
+  if (!k) return false;
+  // Special chars (c++, c#, .net, ci/cd) — substring match
+  if (/[+#./&]/.test(k)) return text.includes(k);
+  // Word-boundary match
+  const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+}
+
+function hasSection(text: string, key: string): boolean {
+  const syns = SECTION_SYNONYMS[key] || [key];
+  return syns.some((s) => new RegExp(`\\b${s.replace(/\s+/g, "\\s+")}\\b`, "i").test(text));
 }
 
 interface AnalyzeArgs {
@@ -70,21 +89,22 @@ export async function analyzeResume({ file, level, profession, targetRole, jobDe
   const levelKeys = LEVEL_KEYWORDS[level];
   const allKeys = Array.from(new Set([...profKeys, ...levelKeys]));
 
-  const matched = allKeys.filter((k) => text.includes(k));
-  const missing = allKeys.filter((k) => !text.includes(k));
+  const matched = allKeys.filter((k) => hasKeyword(text, k));
+  const missing = allKeys.filter((k) => !hasKeyword(text, k));
 
   // Section-by-section scoring
-  const sections: SectionScore[] = SECTIONS.map((s) => {
-    const present = text.includes(s);
+  const sectionKeys = Object.keys(SECTION_SYNONYMS);
+  const sections: SectionScore[] = sectionKeys.map((s) => {
+    const present = hasSection(text, s);
     let score = present ? 70 : 30;
     let note = present ? "Detected" : "Missing — add this section";
     if (s === "experience" && present) {
-      const bullets = (raw.match(/[•\-*]\s/g) || []).length;
-      score = Math.min(100, 50 + bullets * 4);
-      note = `${bullets} bullets detected`;
+      const bullets = (raw.match(/(^|\n)\s*[•\-*·▪►]\s|\n\s+(?=[A-Z])/g) || []).length;
+      score = Math.min(100, 55 + bullets * 3);
+      note = `${bullets} bullet${bullets === 1 ? "" : "s"} detected`;
     }
     if (s === "skills" && present) {
-      const skillHits = profKeys.filter((k) => text.includes(k)).length;
+      const skillHits = profKeys.filter((k) => hasKeyword(text, k)).length;
       score = Math.min(100, 50 + skillHits * 8);
       note = `${skillHits}/${profKeys.length} ${PROFESSION_LABEL[profession]} skills`;
     }
@@ -98,8 +118,8 @@ export async function analyzeResume({ file, level, profession, targetRole, jobDe
 
   // Readability
   const words = (raw.match(/\S+/g) || []).length;
-  const bullets = (raw.match(/[•\-*]\s/g) || []).length;
-  const quantified = (raw.match(/\b\d+%?\b/g) || []).length;
+  const bullets = (raw.match(/(^|\n)\s*[•\-*·▪►]\s/g) || []).length;
+  const quantified = (raw.match(/\b\d[\d,.]*%?\b/g) || []).length;
 
   // Aggregate score
   const sectionAvg = sections.reduce((a, s) => a + s.score, 0) / sections.length;
@@ -133,12 +153,12 @@ export async function analyzeResume({ file, level, profession, targetRole, jobDe
   let jdMatch: AnalysisResult["jdMatch"];
   if (jobDescription && jobDescription.trim().length > 30) {
     const jdTokens = Array.from(new Set(tokenize(jobDescription))).filter((t) => t.length > 3);
-    const jdMatched = jdTokens.filter((t) => text.includes(t));
+    const jdMatched = jdTokens.filter((t) => hasKeyword(text, t));
     const jdScore = Math.round((jdMatched.length / Math.max(1, jdTokens.length)) * 100);
     jdMatch = {
       score: jdScore,
       matched: jdMatched.slice(0, 25),
-      missing: jdTokens.filter((t) => !text.includes(t)).slice(0, 25),
+      missing: jdTokens.filter((t) => !hasKeyword(text, t)).slice(0, 25),
     };
   }
 
@@ -246,7 +266,7 @@ ${"{Your Name}"}`;
       words,
       bullets,
       quantified,
-      readingTime: `${Math.max(1, Math.round(words / 220))} min`,
+      readingTime: words < 400 ? `${Math.max(15, Math.round((words / 400) * 60))} sec` : `${Math.round(words / 400)} min`,
     },
   };
 }
