@@ -266,7 +266,7 @@ ${"{Your Name}"}`;
       words,
       bullets,
       quantified,
-      readingTime: `${Math.max(1, Math.round(words / 220))} min`,
+      readingTime: words < 400 ? `${Math.max(15, Math.round((words / 400) * 60))} sec` : `${Math.round(words / 400)} min`,
     },
   };
 }
