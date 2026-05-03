@@ -153,12 +153,12 @@ export async function analyzeResume({ file, level, profession, targetRole, jobDe
   let jdMatch: AnalysisResult["jdMatch"];
   if (jobDescription && jobDescription.trim().length > 30) {
     const jdTokens = Array.from(new Set(tokenize(jobDescription))).filter((t) => t.length > 3);
-    const jdMatched = jdTokens.filter((t) => text.includes(t));
+    const jdMatched = jdTokens.filter((t) => hasKeyword(text, t));
     const jdScore = Math.round((jdMatched.length / Math.max(1, jdTokens.length)) * 100);
     jdMatch = {
       score: jdScore,
       matched: jdMatched.slice(0, 25),
-      missing: jdTokens.filter((t) => !text.includes(t)).slice(0, 25),
+      missing: jdTokens.filter((t) => !hasKeyword(text, t)).slice(0, 25),
     };
   }
 
