@@ -16,50 +16,47 @@ export default function JobLevelPage() {
   const nav = useNavigate();
   const { jobLevel, setJobLevel, file } = useResume();
 
-  useEffect(() => {
-    if (!file) nav("/upload");
-  }, [file, nav]);
+  useEffect(() => { if (!file) nav("/upload"); }, [file, nav]);
 
   return (
     <PageShell>
-      <section className="container max-w-5xl py-12 lg:py-20">
-        <div className="text-center space-y-4 mb-12 animate-fade-in">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full glass text-xs">
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            <span>Step 2 of 3 · Target seniority</span>
-          </div>
-          <h1 className="font-display text-4xl lg:text-5xl font-bold">
+      <section className="container max-w-5xl py-12 lg:py-16">
+        <div className="text-center space-y-3 mb-10 animate-fade-in">
+          <span className="chip">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            Step 3 of 4 · Seniority
+          </span>
+          <h1 className="font-display text-4xl lg:text-5xl font-bold tracking-tight">
             Pick your <span className="gradient-text">target level</span>
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            We'll calibrate scoring, suggested keywords, and rewrites to match the level you're applying for.
+            We calibrate scoring and rewrites to match the seniority you're aiming for.
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-4">
-          {LEVELS.map((l, i) => {
+        <div className="grid sm:grid-cols-2 gap-3">
+          {LEVELS.map((l) => {
             const active = jobLevel === l.id;
             const Icon = l.icon;
             return (
               <button
                 key={l.id}
                 onClick={() => setJobLevel(l.id)}
-                style={{ animationDelay: `${i * 60}ms` }}
-                className={`group relative text-left rounded-2xl p-6 transition-all duration-300 animate-fade-in ${
-                  active ? "scale-[1.02] shadow-glow" : "hover:scale-[1.01]"
+                className={`text-left rounded-2xl p-5 border transition-all duration-200 ${
+                  active
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border bg-card hover:border-primary/40 hover:shadow-card"
                 }`}
               >
-                <div className={`absolute inset-0 rounded-2xl ${active ? "bg-gradient-primary opacity-100" : "glass"}`} />
-                <div className={`absolute inset-[1.5px] rounded-2xl ${active ? "bg-card" : ""}`} />
-                <div className="relative flex items-start gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                    active ? "bg-gradient-primary text-primary-foreground" : "bg-secondary text-foreground group-hover:bg-gradient-primary group-hover:text-primary-foreground transition"
+                <div className="flex items-start gap-4">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                    active ? "bg-gradient-primary text-primary-foreground" : "bg-secondary text-foreground"
                   }`}>
-                    <Icon className="w-6 h-6" />
+                    <Icon className="w-5 h-5" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="font-display text-xl font-semibold">{l.title}</h3>
+                      <h3 className="font-display text-lg font-semibold">{l.title}</h3>
                       <span className="text-xs text-muted-foreground font-mono">{l.years}</span>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">{l.desc}</p>
@@ -70,8 +67,8 @@ export default function JobLevelPage() {
           })}
         </div>
 
-        <div className="flex items-center justify-between mt-10">
-          <Button variant="ghost" onClick={() => nav("/upload")}>← Back</Button>
+        <div className="flex items-center justify-between mt-8">
+          <Button variant="ghost" onClick={() => nav("/profession")}>← Back</Button>
           <Button
             size="lg"
             onClick={() => nav("/analyzing")}
