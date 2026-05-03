@@ -89,21 +89,22 @@ export async function analyzeResume({ file, level, profession, targetRole, jobDe
   const levelKeys = LEVEL_KEYWORDS[level];
   const allKeys = Array.from(new Set([...profKeys, ...levelKeys]));
 
-  const matched = allKeys.filter((k) => text.includes(k));
-  const missing = allKeys.filter((k) => !text.includes(k));
+  const matched = allKeys.filter((k) => hasKeyword(text, k));
+  const missing = allKeys.filter((k) => !hasKeyword(text, k));
 
   // Section-by-section scoring
-  const sections: SectionScore[] = SECTIONS.map((s) => {
-    const present = text.includes(s);
+  const sectionKeys = Object.keys(SECTION_SYNONYMS);
+  const sections: SectionScore[] = sectionKeys.map((s) => {
+    const present = hasSection(text, s);
     let score = present ? 70 : 30;
     let note = present ? "Detected" : "Missing — add this section";
     if (s === "experience" && present) {
-      const bullets = (raw.match(/[•\-*]\s/g) || []).length;
-      score = Math.min(100, 50 + bullets * 4);
-      note = `${bullets} bullets detected`;
+      const bullets = (raw.match(/(^|\n)\s*[•\-*·▪►]\s|\n\s+(?=[A-Z])/g) || []).length;
+      score = Math.min(100, 55 + bullets * 3);
+      note = `${bullets} bullet${bullets === 1 ? "" : "s"} detected`;
     }
     if (s === "skills" && present) {
-      const skillHits = profKeys.filter((k) => text.includes(k)).length;
+      const skillHits = profKeys.filter((k) => hasKeyword(text, k)).length;
       score = Math.min(100, 50 + skillHits * 8);
       note = `${skillHits}/${profKeys.length} ${PROFESSION_LABEL[profession]} skills`;
     }
@@ -117,8 +118,8 @@ export async function analyzeResume({ file, level, profession, targetRole, jobDe
 
   // Readability
   const words = (raw.match(/\S+/g) || []).length;
-  const bullets = (raw.match(/[•\-*]\s/g) || []).length;
-  const quantified = (raw.match(/\b\d+%?\b/g) || []).length;
+  const bullets = (raw.match(/(^|\n)\s*[•\-*·▪►]\s/g) || []).length;
+  const quantified = (raw.match(/\b\d[\d,.]*%?\b/g) || []).length;
 
   // Aggregate score
   const sectionAvg = sections.reduce((a, s) => a + s.score, 0) / sections.length;
